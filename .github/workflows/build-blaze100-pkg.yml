@@ -157,7 +157,8 @@ jobs:
           dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo VERSION --type Utf8 --maxsize 8 --value "01.00"
           cp build_out/param.sfo sce_sys/param.sfo
 
-          cat << 'GP4EOF' > build_out/blaze100.gp4
+          WORK_DIR=$(pwd)
+          cat << GP4EOF > build_out/blaze100.gp4
           <?xml version="1.0" encoding="utf-8"?>
           <psproject fmt="gp4" version="1000">
             <volume>
@@ -166,22 +167,27 @@ jobs:
               <package_passcode>00000000000000000000000000000000</package_passcode>
             </volume>
             <files>
-              <file orig_path="build_out/eboot.bin" targ_path="eboot.bin"/>
-              <file orig_path="sce_sys/param.sfo" targ_path="sce_sys/param.sfo"/>
-              <file orig_path="sce_sys/icon0.png" targ_path="sce_sys/icon0.png"/>
-              <file orig_path="sce_sys/pic1.png" targ_path="sce_sys/pic1.png"/>
-              <file orig_path="sce_sys/ui.png" targ_path="sce_sys/ui.png"/>
-              <file orig_path="sce_sys/ScorpionMenu-v1.2b-100US.prx" targ_path="sce_sys/ScorpionMenu-v1.2b-100US.prx"/>
-              <file orig_path="sce_sys/Blaze100_Theme.ini" targ_path="sce_sys/Blaze100_Theme.ini"/>
-              <file orig_path="sce_sys/Blaze100_Menu_AR.txt" targ_path="sce_sys/Blaze100_Menu_AR.txt"/>
-              <file orig_path="data/CUSA00419/ScorpionMenu-v1.2b-100US.prx" targ_path="data/CUSA00419/ScorpionMenu-v1.2b-100US.prx"/>
-              <file orig_path="data/CUSA00419/Blaze100_Theme.ini" targ_path="data/CUSA00419/Blaze100_Theme.ini"/>
-              <file orig_path="data/CUSA00419/Blaze100_Menu_AR.txt" targ_path="data/CUSA00419/Blaze100_Menu_AR.txt"/>
+              <file orig_path="$WORK_DIR/build_out/eboot.bin" targ_path="eboot.bin"/>
+              <file orig_path="$WORK_DIR/sce_sys/param.sfo" targ_path="sce_sys/param.sfo"/>
+              <file orig_path="$WORK_DIR/sce_sys/icon0.png" targ_path="sce_sys/icon0.png"/>
+              <file orig_path="$WORK_DIR/sce_sys/pic1.png" targ_path="sce_sys/pic1.png"/>
+              <file orig_path="$WORK_DIR/sce_sys/ui.png" targ_path="sce_sys/ui.png"/>
+              <file orig_path="$WORK_DIR/sce_sys/ScorpionMenu-v1.2b-100US.prx" targ_path="sce_sys/ScorpionMenu-v1.2b-100US.prx"/>
+              <file orig_path="$WORK_DIR/sce_sys/Blaze100_Theme.ini" targ_path="sce_sys/Blaze100_Theme.ini"/>
+              <file orig_path="$WORK_DIR/sce_sys/Blaze100_Menu_AR.txt" targ_path="sce_sys/Blaze100_Menu_AR.txt"/>
+              <file orig_path="$WORK_DIR/data/CUSA00419/ScorpionMenu-v1.2b-100US.prx" targ_path="data/CUSA00419/ScorpionMenu-v1.2b-100US.prx"/>
+              <file orig_path="$WORK_DIR/data/CUSA00419/Blaze100_Theme.ini" targ_path="data/CUSA00419/Blaze100_Theme.ini"/>
+              <file orig_path="$WORK_DIR/data/CUSA00419/Blaze100_Menu_AR.txt" targ_path="data/CUSA00419/Blaze100_Menu_AR.txt"/>
             </files>
+            <rootdir>
+              <dir targ_path="sce_sys"/>
+              <dir targ_path="data"/>
+              <dir targ_path="data/CUSA00419"/>
+            </rootdir>
           </psproject>
           GP4EOF
 
-          dotnet /tmp/PkgTool/PkgTool.dll pkg_build build_out/blaze100.gp4 pkg_output/
+          dotnet /tmp/PkgTool/PkgTool.dll pkg_build build_out/blaze100.gp4 "$WORK_DIR/pkg_output/"
           ls -lh pkg_output/*.pkg
 
       - name: Upload Blaze 100 FPKG
