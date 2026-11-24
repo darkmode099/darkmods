@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm make curl unzip wget ca-certificates git
+          sudo apt-get install -y clang lld llvm make curl unzip wget ca-certificates git p7zip-full
 
       - name: Install OpenOrbis PS4Toolchain
         run: |
@@ -33,7 +33,7 @@ jobs:
           mkdir -p toolchain_pkg
 
           RELEASES_JSON=$(curl -fsSL -H "User-Agent: blaze100-builder" https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases || true)
-          ASSET_URL=$(printf '%s\n' "$RELEASES_JSON" | grep -oE 'https://[^"]+linux[^"]*\.(tgz|tar\.gz|zip)' | head -n 1 || true)
+          ASSET_URL=$(printf '%s\n' "$RELEASES_JSON" | grep -oE 'https://[^"]+\.(tgz|tar\.gz|zip|7z)' | grep -iE 'linux|toolchain|ps4' | head -n 1 || true)
 
           if [ -n "$ASSET_URL" ]; then
             echo "Found release asset: $ASSET_URL"
@@ -42,30 +42,32 @@ jobs:
               *.zip)
                 unzip -q toolchain_pkg/archive -d /opt/ps4toolchain
                 ;;
+              *.7z)
+                7z x toolchain_pkg/archive -o/opt/ps4toolchain -y >/dev/null
+                ;;
               *)
                 sudo tar -xzf toolchain_pkg/archive -C /opt/ps4toolchain
                 ;;
             esac
           fi
 
-          OO_INCLUDE=$(find /opt/ps4toolchain -maxdepth 5 -type f -name "libkernel.h" | head -n 1 || true)
+          OO_INCLUDE=$(find /opt/ps4toolchain -maxdepth 6 -type f -name "libkernel.h" | head -n 1 || true)
 
           if [ -z "$OO_INCLUDE" ]; then
-            echo "No prebuilt archive found; cloning OpenOrbis-PS4-Toolchain repository..."
+            echo "Cloning OpenOrbis-PS4-Toolchain repository..."
             git clone --depth 1 https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain.git /opt/ps4toolchain/src
-            OO_INCLUDE=$(find /opt/ps4toolchain/src -maxdepth 5 -type f -name "libkernel.h" | head -n 1 || true)
+            OO_INCLUDE=$(find /opt/ps4toolchain/src -maxdepth 6 -type f -name "libkernel.h" | head -n 1 || true)
           fi
 
           test -n "$OO_INCLUDE"
           OO_PATH=$(cd "$(dirname "$OO_INCLUDE")/../.." && pwd)
           echo "OO_PS4_TOOLCHAIN=$OO_PATH" >> $GITHUB_ENV
           echo "Detected OO_PS4_TOOLCHAIN=$OO_PATH"
-          ls -la "$OO_PATH"
 
       - name: Build eboot.bin and FPKG
         run: |
           set -euo pipefail
-          mkdir -p build_out sce_sys data/CUSA00419 pkg_output
+          mkdir -p build_out sce_sys data/CUSA00419 pkg_output /tmp/ps4_inc/sys
           cp assets/icon0.png sce_sys/icon0.png
           cp assets/splash.png sce_sys/pic1.png
           cp assets/ui.png sce_sys/ui.png
@@ -76,13 +78,49 @@ jobs:
           cp mod_data/CUSA00419/Blaze100_Theme.ini data/CUSA00419/Blaze100_Theme.ini
           cp mod_data/CUSA00419/Blaze100_Menu_AR.txt data/CUSA00419/Blaze100_Menu_AR.txt
 
+          cat << 'SYSTYPES' > /tmp/ps4_inc/sys/types.h
+          #pragma once
+          #include <stddef.h>
+          #include <stdint.h>
+          typedef int64_t off_t;
+          typedef int64_t ssize_t;
+          typedef uint32_t uid_t;
+          typedef uint32_t gid_t;
+          typedef uint32_t mode_t;
+          typedef int32_t pid_t;
+          SYSTYPES
+
+          cat << 'UNISTDH' > /tmp/ps4_inc/unistd.h
+          #pragma once
+          #include <sys/types.h>
+          #ifdef __cplusplus
+          extern "C" {
+          #endif
+          unsigned int sleep(unsigned int seconds);
+          int usleep(unsigned int usec);
+          #ifdef __cplusplus
+          }
+          #endif
+          UNISTDH
+
+          SYS_TYPES_FOUND=$(find /opt/ps4toolchain -maxdepth 6 -type f -path "*/sys/types.h" | head -n 1 || true)
+          EXTRA_INC_FLAGS=""
+          if [ -n "$SYS_TYPES_FOUND" ]; then
+            C_INC_ROOT=$(cd "$(dirname "$SYS_TYPES_FOUND")/.." && pwd)
+            EXTRA_INC_FLAGS="-I$C_INC_ROOT"
+          else
+            EXTRA_INC_FLAGS="-I/tmp/ps4_inc"
+          fi
+
           clang++ -target x86_64-scei-ps4-elf -fPIC -isysroot "$OO_PS4_TOOLCHAIN" \
-            -isystem "$OO_PS4_TOOLCHAIN/include" -I"$OO_PS4_TOOLCHAIN/include/c++/v1" \
+            -isystem "$OO_PS4_TOOLCHAIN/include" \
+            -I"$OO_PS4_TOOLCHAIN/include/c++/v1" \
+            $EXTRA_INC_FLAGS \
             -c src/main.cpp -o build_out/main.o
 
-          LINK_SCRIPT=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 4 -name "link.x" | head -n 1 || true)
-          CRT1_OBJ=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 5 -name "crt1.o" | head -n 1 || true)
-          CREATE_FSELF=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 5 -type f -name "create-fself" | head -n 1 || true)
+          LINK_SCRIPT=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 5 -name "link.x" | head -n 1 || true)
+          CRT1_OBJ=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 6 -name "crt1.o" | head -n 1 || true)
+          CREATE_FSELF=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 6 -type f -name "create-fself" | head -n 1 || true)
 
           if [ -n "$LINK_SCRIPT" ] && [ -n "$CRT1_OBJ" ]; then
             LIB_DIR=$(dirname "$CRT1_OBJ")
