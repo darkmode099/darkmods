@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 
 struct LoaderState {
     int progress;          // 0 -> 100
@@ -24,7 +25,6 @@ struct UiState {
 };
 
 static void sendConsoleActivationMessage(const char* messageText) {
-    // إرسال إشعار/رسالة واضحة لتأكيد جاهزية وتفعيل المود على GTA V v1.00 (CUSA00419)
     std::printf("\n================================================\n");
     std::printf("[Blaze 100 NOTIFICATION] %s\n", messageText);
     std::printf("================================================\n");
@@ -196,39 +196,72 @@ static void triggerButtonPressEffect(UiState& ui, int buttonIndex) {
     }
 }
 
-int main() {
+static void loadOptionalSysmodules() {
+#ifdef ORBIS_SYSMODULE_SYSTEM_SERVICE
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_SYSTEM_SERVICE);
+#endif
+#ifdef ORBIS_SYSMODULE_USER_SERVICE
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_USER_SERVICE);
+#endif
+#ifdef ORBIS_SYSMODULE_PAD
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_PAD);
+#endif
+#ifdef ORBIS_SYSMODULE_VIDEO_OUT
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_VIDEO_OUT);
+#endif
+}
+
+int main() {
+    loadOptionalSysmodules();
 
     sceUserServiceInitialize(nullptr);
     OrbisUserServiceLoginUserIdList userList;
+    std::memset(&userList, 0, sizeof(userList));
     sceUserServiceGetLoginUserIdList(&userList);
     int userId = userList.userId[0];
 
     scePadInit();
     int padHandle = scePadOpen(userId, 0, 0, nullptr);
 
+#ifdef ORBIS_VIDEO_OUT_BUS_MAIN
     int videoHandle = sceVideoOutOpen(userId, ORBIS_VIDEO_OUT_BUS_MAIN, 0, nullptr);
     if (videoHandle >= 0) {
         OrbisVideoOutBufferAttribute attr;
         std::memset(&attr, 0, sizeof(attr));
-        attr.pixelFormat = ORBIS_VIDEO_OUT_PIXEL_FORMAT_A8B8G8R8_SRGB;
-        attr.aspectRatio = ORBIS_VIDEO_OUT_ASPECT_RATIO_16_9;
-        attr.width = 1920;
-        attr.height = 1080;
-        attr.pitchInPixel = 1920;
-        sceVideoOutSetBufferAttribute(videoHandle, 0, &attr);
+        sceVideoOutSetBufferAttribute(&attr, 0, 1920, 1080, 1920, 0, 0);
     }
+#endif
 
     LoaderState loader;
     runFastLoadingBar(loader, 2000);
 
+#ifdef sceSystemServiceHideSplashScreen
     sceSystemServiceHideSplashScreen();
+#endif
 
     UiState ui{0, 0, false, false, 0, false};
     OrbisPadData padData;
+
+    unsigned int btnUp =
+#ifdef ORBIS_PAD_BUTTON_UP
+        ORBIS_PAD_BUTTON_UP;
+#else
+        0x00000010u;
+#endif
+
+    unsigned int btnDown =
+#ifdef ORBIS_PAD_BUTTON_DOWN
+        ORBIS_PAD_BUTTON_DOWN;
+#else
+        0x00000040u;
+#endif
+
+    unsigned int btnCross =
+#ifdef ORBIS_PAD_BUTTON_CROSS
+        ORBIS_PAD_BUTTON_CROSS;
+#else
+        0x00004000u;
+#endif
 
     while (true) {
         if (padHandle >= 0) {
@@ -236,13 +269,13 @@ int main() {
             if (scePadReadState(padHandle, &padData) == 0 && padData.connected) {
                 unsigned int buttons = padData.buttons;
 
-                if (buttons & ORBIS_PAD_BUTTON_UP) {
+                if (buttons & btnUp) {
                     ui.selectedIndex = 0;
-                } else if (buttons & ORBIS_PAD_BUTTON_DOWN) {
+                } else if (buttons & btnDown) {
                     ui.selectedIndex = 1;
                 }
 
-                if (buttons & ORBIS_PAD_BUTTON_CROSS) {
+                if (buttons & btnCross) {
                     triggerButtonPressEffect(ui, ui.selectedIndex);
                     if (ui.selectedIndex == 1) {
                         break;
