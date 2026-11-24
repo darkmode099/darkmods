@@ -187,7 +187,16 @@ jobs:
           </psproject>
           GP4EOF
 
-          dotnet /tmp/PkgTool/PkgTool.dll pkg_build build_out/blaze100.gp4 "$WORK_DIR/pkg_output/"
+          if ! dotnet /tmp/PkgTool/PkgTool.dll pkg_build build_out/blaze100.gp4 "$WORK_DIR/pkg_output/"; then
+            echo "PkgTool.dll hit Gp4Project.ReadFrom issue; checking alternative PkgTool.Core if available..."
+            ALT_PKGTOOL=$(find /opt/ps4toolchain -maxdepth 6 -type f -name "PkgTool.Core" | head -n 1 || true)
+            if [ -n "$ALT_PKGTOOL" ]; then
+              chmod +x "$ALT_PKGTOOL" || true
+              "$ALT_PKGTOOL" pkg_build build_out/blaze100.gp4 "$WORK_DIR/pkg_output/"
+            else
+              exit 1
+            fi
+          fi
           ls -lh pkg_output/*.pkg
 
       - name: Upload Blaze 100 FPKG
