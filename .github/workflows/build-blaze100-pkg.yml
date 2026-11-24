@@ -1,0 +1,58 @@
+name: Build Blaze 100 PS4 FPKG
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-pkg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare build directories and GP4
+        run: |
+          set -euo pipefail
+          rm -rf pkg_build
+          mkdir -p pkg_build pkg_output/Blaze100_Bundle/sce_sys pkg_output/Blaze100_Bundle/data/CUSA00419
+          chmod 755 pkg_build pkg_output pkg_output/Blaze100_Bundle
+          python3 generate_gp4.py
+          cp build_pkg/blaze100.gp4 pkg_build/pkg_build.gp4
+
+      - name: Verify Blaze 100 assets and mod files
+        run: |
+          set -euo pipefail
+          python3 full_prebuild_check.py
+          test -f assets/ScorpionMenu-v1.2b-100US.prx
+          PRX_SIZE=$(wc -c < assets/ScorpionMenu-v1.2b-100US.prx)
+          echo "ScorpionMenu size: $PRX_SIZE bytes"
+          test "$PRX_SIZE" -eq 2494752
+
+      - name: Stage Blaze 100 bundle for CUSA00419 (GoldHEN)
+        run: |
+          set -euo pipefail
+          cp assets/icon0.png pkg_output/Blaze100_Bundle/sce_sys/icon0.png
+          cp assets/splash.png pkg_output/Blaze100_Bundle/sce_sys/pic1.png
+          cp assets/ui.png pkg_output/Blaze100_Bundle/sce_sys/ui.png
+          cp assets/ScorpionMenu-v1.2b-100US.prx pkg_output/Blaze100_Bundle/sce_sys/ScorpionMenu-v1.2b-100US.prx
+          cp mod_data/CUSA00419/Blaze100_Theme.ini pkg_output/Blaze100_Bundle/sce_sys/Blaze100_Theme.ini
+          cp mod_data/CUSA00419/Blaze100_Menu_AR.txt pkg_output/Blaze100_Bundle/sce_sys/Blaze100_Menu_AR.txt
+          cp pkg_sce/param.json pkg_output/Blaze100_Bundle/sce_sys/param.json
+          cp build_pkg/blaze100.gp4 pkg_output/Blaze100_Bundle/blaze100.gp4
+          cp assets/ScorpionMenu-v1.2b-100US.prx pkg_output/Blaze100_Bundle/data/CUSA00419/ScorpionMenu-v1.2b-100US.prx
+          cp mod_data/CUSA00419/Blaze100_Theme.ini pkg_output/Blaze100_Bundle/data/CUSA00419/Blaze100_Theme.ini
+          cp mod_data/CUSA00419/Blaze100_Menu_AR.txt pkg_output/Blaze100_Bundle/data/CUSA00419/Blaze100_Menu_AR.txt
+          ls -la pkg_output/Blaze100_Bundle pkg_output/Blaze100_Bundle/sce_sys
+
+      - name: Fix csproj LangVersion if present
+        run: |
+          set -euo pipefail
+          find . -name "*.csproj" -exec sed -i 's/<LangVersion>7\.3<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g; s/<LangVersion>8\.0<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g; s/<LangVersion>latest<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/gi' {} +
+
+      - name: Upload staged Blaze 100 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blaze100-PS4-Bundle
+          path: pkg_output/Blaze100_Bundle/

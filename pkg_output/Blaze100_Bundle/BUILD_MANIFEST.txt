@@ -1,0 +1,7 @@
+AppName: Blaze 100
+TargetGame: GTA V v1.00 (CUSA00419)
+Loader: GoldHEN
+ModFile: ScorpionMenu-v1.2b-100US.prx (2494752 bytes)
+ThemeFile: Blaze100_Theme.ini
+ArabicMenuFile: Blaze100_Menu_AR.txt
+PackagedEntries: 11

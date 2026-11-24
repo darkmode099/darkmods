@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<psproject fmt="gp4" version="1000">
+  <volume>
+    <volume_type>pkg_ps4_app</volume_type>
+    <package_content_id>UP9000-BLZ100001_00-BLAZE100APP00001</package_content_id>
+    <package_passcode>00000000000000000000000000000000</package_passcode>
+  </volume>
+  <files>
+    <file orig_path="assets/icon0.png" targ_path="sce_sys/icon0.png"/>
+    <file orig_path="assets/splash.png" targ_path="sce_sys/pic1.png"/>
+    <file orig_path="assets/ui.png" targ_path="sce_sys/ui.png"/>
+    <file orig_path="assets/ScorpionMenu-v1.2b-100US.prx" targ_path="sce_sys/ScorpionMenu-v1.2b-100US.prx"/>
+    <file orig_path="mod_data/CUSA00419/Blaze100_Theme.ini" targ_path="sce_sys/Blaze100_Theme.ini"/>
+    <file orig_path="mod_data/CUSA00419/Blaze100_Menu_AR.txt" targ_path="sce_sys/Blaze100_Menu_AR.txt"/>
+  </files>
+</psproject>

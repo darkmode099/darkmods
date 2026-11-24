@@ -1,0 +1,19 @@
+{
+  "applicationCategoryType": 0,
+  "attribute": 0,
+  "contentId": "UP9000-BLZ100001_00-BLAZE100APP00001",
+  "downloadDataSize": 0,
+  "entryPoint": "eboot.bin",
+  "format": "obs",
+  "npTitle": "Blaze 100",
+  "ps3SystemVer": "00.000",
+  "pubtoolsVersion": "0.00",
+  "startupImages": [
+    {
+      "fileName": "splash.png"
+    }
+  ],
+  "title": "Blaze 100",
+  "titleId": "BLZ100001",
+  "version": "01.00"
+}
