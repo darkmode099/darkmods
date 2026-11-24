@@ -41,9 +41,7 @@ jobs:
             curl -fSL "$FALLBACK_URL" -o toolchain.tgz
           fi
           ls -lh toolchain.tgz
-          tar -tzf toolchain.tgz | head -n 15
           sudo tar -xzf toolchain.tgz -C /opt/ps4toolchain
-          find /opt/ps4toolchain -maxdepth 4 -name "libkernel.h"
           OO_INCLUDE=$(find /opt/ps4toolchain -maxdepth 4 -type f -name "libkernel.h" | head -n 1)
           OO_PATH=$(cd "$(dirname "$OO_INCLUDE")/../.." && pwd)
           echo "OO_PS4_TOOLCHAIN=$OO_PATH" >> $GITHUB_ENV
