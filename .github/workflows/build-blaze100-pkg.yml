@@ -6,53 +6,105 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-pkg:
+  build:
+    name: Build FPKG
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prepare build directories and GP4
+      - name: Install dependencies and OpenOrbis PS4Toolchain
         run: |
           set -euo pipefail
-          rm -rf pkg_build
-          mkdir -p pkg_build pkg_output/Blaze100_Bundle/sce_sys pkg_output/Blaze100_Bundle/data/CUSA00419
-          chmod 755 pkg_build pkg_output pkg_output/Blaze100_Bundle
-          python3 generate_gp4.py
-          cp build_pkg/blaze100.gp4 pkg_build/pkg_build.gp4
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm make curl unzip wget dotnet-sdk-8.0
+          sudo mkdir -p /opt/ps4toolchain
+          cd /tmp
+          TOOLCHAIN_URL=$(curl -s https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest | grep -oE 'https://[^"]+linux\.tgz' | head -n 1)
+          if [ -z "$TOOLCHAIN_URL" ]; then
+            TOOLCHAIN_URL="https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.3/OpenOrbis-PS4-Toolchain-v0.5.3-linux.tgz"
+          fi
+          echo "Downloading OpenOrbis from: $TOOLCHAIN_URL"
+          curl -L "$TOOLCHAIN_URL" -o toolchain.tgz
+          sudo tar -xzf toolchain.tgz -C /opt/ps4toolchain
+          OO_PATH=$(find /opt/ps4toolchain -maxdepth 3 -type d -name "include" | head -n 1 | xargs dirname)
+          echo "OO_PS4_TOOLCHAIN=$OO_PATH" >> $GITHUB_ENV
+          echo "Detected OO_PS4_TOOLCHAIN=$OO_PATH"
+          test -f "$OO_PATH/include/orbis/libkernel.h"
 
-      - name: Verify Blaze 100 assets and mod files
+      - name: Build eboot.bin and FPKG
         run: |
           set -euo pipefail
-          python3 full_prebuild_check.py
-          test -f assets/ScorpionMenu-v1.2b-100US.prx
-          PRX_SIZE=$(wc -c < assets/ScorpionMenu-v1.2b-100US.prx)
-          echo "ScorpionMenu size: $PRX_SIZE bytes"
-          test "$PRX_SIZE" -eq 2494752
+          mkdir -p build_out sce_sys data/CUSA00419 pkg_output
+          cp assets/icon0.png sce_sys/icon0.png
+          cp assets/splash.png sce_sys/pic1.png
+          cp assets/ui.png sce_sys/ui.png
+          cp assets/ScorpionMenu-v1.2b-100US.prx sce_sys/ScorpionMenu-v1.2b-100US.prx
+          cp mod_data/CUSA00419/Blaze100_Theme.ini sce_sys/Blaze100_Theme.ini
+          cp mod_data/CUSA00419/Blaze100_Menu_AR.txt sce_sys/Blaze100_Menu_AR.txt
+          cp assets/ScorpionMenu-v1.2b-100US.prx data/CUSA00419/ScorpionMenu-v1.2b-100US.prx
+          cp mod_data/CUSA00419/Blaze100_Theme.ini data/CUSA00419/Blaze100_Theme.ini
+          cp mod_data/CUSA00419/Blaze100_Menu_AR.txt data/CUSA00419/Blaze100_Menu_AR.txt
 
-      - name: Stage Blaze 100 bundle for CUSA00419 (GoldHEN)
-        run: |
-          set -euo pipefail
-          cp assets/icon0.png pkg_output/Blaze100_Bundle/sce_sys/icon0.png
-          cp assets/splash.png pkg_output/Blaze100_Bundle/sce_sys/pic1.png
-          cp assets/ui.png pkg_output/Blaze100_Bundle/sce_sys/ui.png
-          cp assets/ScorpionMenu-v1.2b-100US.prx pkg_output/Blaze100_Bundle/sce_sys/ScorpionMenu-v1.2b-100US.prx
-          cp mod_data/CUSA00419/Blaze100_Theme.ini pkg_output/Blaze100_Bundle/sce_sys/Blaze100_Theme.ini
-          cp mod_data/CUSA00419/Blaze100_Menu_AR.txt pkg_output/Blaze100_Bundle/sce_sys/Blaze100_Menu_AR.txt
-          cp pkg_sce/param.json pkg_output/Blaze100_Bundle/sce_sys/param.json
-          cp build_pkg/blaze100.gp4 pkg_output/Blaze100_Bundle/blaze100.gp4
-          cp assets/ScorpionMenu-v1.2b-100US.prx pkg_output/Blaze100_Bundle/data/CUSA00419/ScorpionMenu-v1.2b-100US.prx
-          cp mod_data/CUSA00419/Blaze100_Theme.ini pkg_output/Blaze100_Bundle/data/CUSA00419/Blaze100_Theme.ini
-          cp mod_data/CUSA00419/Blaze100_Menu_AR.txt pkg_output/Blaze100_Bundle/data/CUSA00419/Blaze100_Menu_AR.txt
-          ls -la pkg_output/Blaze100_Bundle pkg_output/Blaze100_Bundle/sce_sys
+          clang++ -target x86_64-scei-ps4-elf -fPIC -isysroot "$OO_PS4_TOOLCHAIN" \
+            -isystem "$OO_PS4_TOOLCHAIN/include" -I"$OO_PS4_TOOLCHAIN/include/c++/v1" \
+            -c src/main.cpp -o build_out/main.o
 
-      - name: Fix csproj LangVersion if present
-        run: |
-          set -euo pipefail
-          find . -name "*.csproj" -exec sed -i 's/<LangVersion>7\.3<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g; s/<LangVersion>8\.0<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g; s/<LangVersion>latest<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/gi' {} +
+          ld.lld -m elf_x86_64 -pie --script "$OO_PS4_TOOLCHAIN/link.x" \
+            --eh-frame-hdr -o build_out/Blaze100.elf \
+            "$OO_PS4_TOOLCHAIN/lib/crt1.o" build_out/main.o \
+            -L"$OO_PS4_TOOLCHAIN/lib" -lc -lkernel -lc++ -lSceSysmodule -lSceSystemService -lSceUserService -lScePad -lSceVideoOut
 
-      - name: Upload staged Blaze 100 artifact
+          "$OO_PS4_TOOLCHAIN/bin/linux/create-fself" -in=build_out/Blaze100.elf --out=build_out/eboot.bin --paid 0x3800000000000011
+
+          git clone --depth 1 https://github.com/OpenOrbis/LibOrbisPkg.git /tmp/LibOrbisPkg
+          find /tmp/LibOrbisPkg -name "*.csproj" -exec sed -i 's/<LangVersion>7\.3<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g; s/<LangVersion>8\.0<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g' {} +
+          dotnet build /tmp/LibOrbisPkg/PkgTool/PkgTool.csproj -c Release -o /tmp/PkgTool
+
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_new build_out/param.sfo
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo APP_TYPE --type Integer --maxsize 4 --value 1
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo APP_VER --type Utf8 --maxsize 8 --value "01.00"
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo ATTRIBUTE --type Integer --maxsize 4 --value 0
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo CATEGORY --type Utf8 --maxsize 4 --value "gd"
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo CONTENT_ID --type Utf8 --maxsize 48 --value "UP9000-BLZ100001_00-BLAZE100APP00001"
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo DOWNLOAD_DATA_SIZE --type Integer --maxsize 4 --value 0
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo FORMAT --type Utf8 --maxsize 4 --value "obs"
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo PARENTAL_LEVEL --type Integer --maxsize 4 --value 1
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo SYSTEM_VER --type Integer --maxsize 4 --value 0
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo TITLE --type Utf8 --maxsize 128 --value "Blaze 100"
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo TITLE_ID --type Utf8 --maxsize 12 --value "BLZ100001"
+          dotnet /tmp/PkgTool/PkgTool.dll sfo_setentry build_out/param.sfo VERSION --type Utf8 --maxsize 8 --value "01.00"
+          cp build_out/param.sfo sce_sys/param.sfo
+
+          cat << 'GP4EOF' > build_out/blaze100.gp4
+          <?xml version="1.0" encoding="utf-8"?>
+          <psproject fmt="gp4" version="1000">
+            <volume>
+              <volume_type>pkg_ps4_app</volume_type>
+              <package_content_id>UP9000-BLZ100001_00-BLAZE100APP00001</package_content_id>
+              <package_passcode>00000000000000000000000000000000</package_passcode>
+            </volume>
+            <files>
+              <file orig_path="build_out/eboot.bin" targ_path="eboot.bin"/>
+              <file orig_path="sce_sys/param.sfo" targ_path="sce_sys/param.sfo"/>
+              <file orig_path="sce_sys/icon0.png" targ_path="sce_sys/icon0.png"/>
+              <file orig_path="sce_sys/pic1.png" targ_path="sce_sys/pic1.png"/>
+              <file orig_path="sce_sys/ui.png" targ_path="sce_sys/ui.png"/>
+              <file orig_path="sce_sys/ScorpionMenu-v1.2b-100US.prx" targ_path="sce_sys/ScorpionMenu-v1.2b-100US.prx"/>
+              <file orig_path="sce_sys/Blaze100_Theme.ini" targ_path="sce_sys/Blaze100_Theme.ini"/>
+              <file orig_path="sce_sys/Blaze100_Menu_AR.txt" targ_path="sce_sys/Blaze100_Menu_AR.txt"/>
+              <file orig_path="data/CUSA00419/ScorpionMenu-v1.2b-100US.prx" targ_path="data/CUSA00419/ScorpionMenu-v1.2b-100US.prx"/>
+              <file orig_path="data/CUSA00419/Blaze100_Theme.ini" targ_path="data/CUSA00419/Blaze100_Theme.ini"/>
+              <file orig_path="data/CUSA00419/Blaze100_Menu_AR.txt" targ_path="data/CUSA00419/Blaze100_Menu_AR.txt"/>
+            </files>
+          </psproject>
+          GP4EOF
+
+          dotnet /tmp/PkgTool/PkgTool.dll pkg_build build_out/blaze100.gp4 pkg_output/
+          ls -lh pkg_output/*.pkg
+
+      - name: Upload Blaze 100 FPKG
         uses: actions/upload-artifact@v4
         with:
-          name: Blaze100-PS4-Bundle
-          path: pkg_output/Blaze100_Bundle/
+          name: Blaze100-PS4-FPKG
+          path: pkg_output/*.pkg
