@@ -18,24 +18,37 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Install dependencies and OpenOrbis PS4Toolchain
+      - name: Install build tools
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm make curl unzip wget
+          sudo apt-get install -y clang lld llvm make curl unzip wget ca-certificates
+
+      - name: Install OpenOrbis PS4Toolchain
+        run: |
+          set -euo pipefail
           sudo mkdir -p /opt/ps4toolchain
           cd /tmp
-          TOOLCHAIN_URL=$(curl -s https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest | grep -oE 'https://[^"]+linux\.tgz' | head -n 1)
-          if [ -z "$TOOLCHAIN_URL" ]; then
-            TOOLCHAIN_URL="https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.3/OpenOrbis-PS4-Toolchain-v0.5.3-linux.tgz"
+          rm -f toolchain.tgz
+          API_URL=$(curl -fsSL https://api.github.com/repos/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/latest | grep -oE 'https://[^"]+\.(tgz|tar\.gz)' | head -n 1 || true)
+          if [ -n "$API_URL" ]; then
+            echo "Trying latest release asset: $API_URL"
+            curl -fSL "$API_URL" -o toolchain.tgz || rm -f toolchain.tgz
           fi
-          echo "Downloading OpenOrbis from: $TOOLCHAIN_URL"
-          curl -L "$TOOLCHAIN_URL" -o toolchain.tgz
+          if [ ! -f toolchain.tgz ]; then
+            FALLBACK_URL="https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.3/OpenOrbis-PS4-Toolchain-v0.5.3-linux.tgz"
+            echo "Trying fallback release asset: $FALLBACK_URL"
+            curl -fSL "$FALLBACK_URL" -o toolchain.tgz
+          fi
+          ls -lh toolchain.tgz
+          tar -tzf toolchain.tgz | head -n 15
           sudo tar -xzf toolchain.tgz -C /opt/ps4toolchain
-          OO_PATH=$(find /opt/ps4toolchain -maxdepth 3 -type d -name "include" | head -n 1 | xargs dirname)
+          find /opt/ps4toolchain -maxdepth 4 -name "libkernel.h"
+          OO_INCLUDE=$(find /opt/ps4toolchain -maxdepth 4 -type f -name "libkernel.h" | head -n 1)
+          OO_PATH=$(cd "$(dirname "$OO_INCLUDE")/../.." && pwd)
           echo "OO_PS4_TOOLCHAIN=$OO_PATH" >> $GITHUB_ENV
           echo "Detected OO_PS4_TOOLCHAIN=$OO_PATH"
-          test -f "$OO_PATH/include/orbis/libkernel.h"
+          ls -la "$OO_PATH"
 
       - name: Build eboot.bin and FPKG
         run: |
@@ -51,16 +64,26 @@ jobs:
           cp mod_data/CUSA00419/Blaze100_Theme.ini data/CUSA00419/Blaze100_Theme.ini
           cp mod_data/CUSA00419/Blaze100_Menu_AR.txt data/CUSA00419/Blaze100_Menu_AR.txt
 
+          LINK_SCRIPT=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 3 -name "link.x" | head -n 1)
+          CRT1_OBJ=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 4 -name "crt1.o" | head -n 1)
+          LIB_DIR=$(dirname "$CRT1_OBJ")
+          CREATE_FSELF=$(find "$OO_PS4_TOOLCHAIN" -maxdepth 4 -type f -name "create-fself" | head -n 1)
+
+          echo "LINK_SCRIPT=$LINK_SCRIPT"
+          echo "CRT1_OBJ=$CRT1_OBJ"
+          echo "LIB_DIR=$LIB_DIR"
+          echo "CREATE_FSELF=$CREATE_FSELF"
+
           clang++ -target x86_64-scei-ps4-elf -fPIC -isysroot "$OO_PS4_TOOLCHAIN" \
             -isystem "$OO_PS4_TOOLCHAIN/include" -I"$OO_PS4_TOOLCHAIN/include/c++/v1" \
             -c src/main.cpp -o build_out/main.o
 
-          ld.lld -m elf_x86_64 -pie --script "$OO_PS4_TOOLCHAIN/link.x" \
+          ld.lld -m elf_x86_64 -pie --script "$LINK_SCRIPT" \
             --eh-frame-hdr -o build_out/Blaze100.elf \
-            "$OO_PS4_TOOLCHAIN/lib/crt1.o" build_out/main.o \
-            -L"$OO_PS4_TOOLCHAIN/lib" -lc -lkernel -lc++ -lSceSysmodule -lSceSystemService -lSceUserService -lScePad -lSceVideoOut
+            "$CRT1_OBJ" build_out/main.o \
+            -L"$LIB_DIR" -lc -lkernel -lc++ -lSceSysmodule -lSceSystemService -lSceUserService -lScePad -lSceVideoOut
 
-          "$OO_PS4_TOOLCHAIN/bin/linux/create-fself" -in=build_out/Blaze100.elf --out=build_out/eboot.bin --paid 0x3800000000000011
+          "$CREATE_FSELF" -in=build_out/Blaze100.elf --out=build_out/eboot.bin --paid 0x3800000000000011
 
           git clone --depth 1 https://github.com/OpenOrbis/LibOrbisPkg.git /tmp/LibOrbisPkg
           find /tmp/LibOrbisPkg -name "*.csproj" -exec sed -i 's/<LangVersion>7\.3<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g; s/<LangVersion>8\.0<\/LangVersion>/<LangVersion>7.2<\/LangVersion>/g' {} +
